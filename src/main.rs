@@ -3,7 +3,6 @@ use tokio::process::Command;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
-use tracing::info;
 
 #[derive(Debug)]
 struct Backend {
@@ -21,7 +20,7 @@ impl LanguageServer for Backend {
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec![".".to_string()]),
+                    trigger_characters: Some(vec!["GHI#".to_string()]),
                     work_done_progress_options: Default::default(),
                     all_commit_characters: None,
                     ..Default::default()
@@ -39,7 +38,7 @@ impl LanguageServer for Backend {
                 }),
                 ..ServerCapabilities::default()
             },
-            ..Default::default()
+            // ..Default::default()
         })
     }
 
@@ -109,52 +108,45 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn completion(
-        &self,
-        _completion_parms: CompletionParams,
-    ) -> Result<Option<CompletionResponse>> {
-        /*
-        Showing 4 of 4 open issues in entur/helm-charts\n
-        #142  Automatically update examples as part of release                about 4 months ago
-        #126  `ingress.class` annotation is deprecated           enhancement  about 5 months ago
-        #101  Use internalPort to specify k8s' grpc probe ports               about 4 months ago
-        #42   Add integration test for cron job                  enhancement  about 1 year ago
-        */
+    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let mut completion_items: Vec<CompletionItem> = vec![];
+        let issues = Backend::run_gh_command(vec!["issue", "list"]).await?;
+        for issue in issues.lines().collect::<Vec<&str>>() {
+            let parts = issue
+                .split('\t')
+                .map(str::to_owned)
+                .collect::<Vec<String>>();
+            let id = parts[0].clone();
+            let label = parts
+                .iter()
+                .take(3)
+                .map(String::to_owned)
+                .collect::<Vec<String>>()
+                .join(" ");
+            let detail = Backend::run_gh_command(vec!["issue", "view", id.as_str()]).await?;
+            completion_items.push(CompletionItem::new_simple(label, detail));
+        }
+        Ok(Some(CompletionResponse::Array(completion_items)))
+    }
+}
+
+impl Backend {
+    async fn run_gh_command(args: Vec<&str>) -> Result<String> {
         let output = Command::new("gh")
-            .arg("issue")
-            .arg("list")
+            .args(args)
             .output()
             .await
             .unwrap()
             .stdout
             .to_owned();
         let output = String::from_utf8(output).unwrap();
-
-        self.client.log_message(MessageType::INFO, &output).await;
-        let iss: Vec<&str> = output.split_terminator('\n').skip(2).collect();
-        let compls: Vec<CompletionItem> = iss
-            .into_iter()
-            .map(|entry| CompletionItem::new_simple(entry.into(), entry.into()))
-            .collect();
-        /*
-        Add integration test for cron job #42
-        Open • AlexanderBrevig opened about 1 year ago • 0 comments
-        Labels: enhancement\n\nNo description provided\n\n
-        View this issue on GitHub: https://github.com/entur/helm-charts/issues/42
-        */
-        // Ok(Some(CompletionResponse::Array(vec![
-        //     CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-        //     CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        // ])))
-        Ok(Some(CompletionResponse::Array(compls)))
+        Ok(output)
     }
 }
 
 #[tokio::main]
 async fn main() {
     std::env::set_var("RUST_LOG", "info");
-    // env_logger::init();
-    info!("github-lsp starting");
     #[cfg(feature = "runtime-agnostic")]
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
