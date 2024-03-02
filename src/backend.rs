@@ -19,18 +19,6 @@ pub struct Backend {
 }
 
 impl Backend {
-    // async fn run_gh_command(args: Vec<&str>) -> Result<String> {
-    //     let output = Command::new("gh")
-    //         .args(args)
-    //         .output()
-    //         .await
-    //         .unwrap()
-    //         .stdout
-    //         .to_owned();
-    //     let output = String::from_utf8(output).unwrap();
-    //     Ok(output)
-    // }
-
     pub(crate) async fn search_issue_and_pr(
         &self,
         position: Position,

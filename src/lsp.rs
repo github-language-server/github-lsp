@@ -24,6 +24,7 @@ impl LanguageServer for Backend {
                         "[".to_string(),
                         "#".to_string(),
                         ":".to_string(),
+                        "@".to_string(),
                         "/".to_string(),
                     ]),
                     work_done_progress_options: Default::default(),
@@ -133,10 +134,10 @@ impl LanguageServer for Backend {
         let rope = self
             .document_map
             .get(&uri.to_string())
-            .expect("Edited doc in docmap");
+            .ok_or(tower_lsp::jsonrpc::Error::invalid_request())?;
         let line = rope
             .get_line(position.line as usize)
-            .expect("The reported line should exist")
+            .ok_or(tower_lsp::jsonrpc::Error::internal_error())?
             .to_string();
         let line = line.split_at(position.character as usize).0;
         let word = line

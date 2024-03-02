@@ -1,6 +1,6 @@
+mod issue;
 use std::fmt;
 
-use octocrab::models::{issues::Issue, IssueState};
 use tokio::process::Command;
 
 #[derive(Debug)]
@@ -51,11 +51,11 @@ pub async fn gh_cli_owner_name() -> std::result::Result<(String, String), GitHub
         .arg(".owner.login,.name")
         .output()
         .await
-        .unwrap()
+        .map_err(|_| GitHubCLIError::NoOwner)?
         .stdout
         .to_owned();
     String::from_utf8(output)
-        .expect("GH CLI must emit valid utf8")
+        .map_err(|_| GitHubCLIError::NoOwner)?
         .trim()
         .split_once('\n')
         .map(|on| (on.0.to_string(), on.1.to_string()))
@@ -70,38 +70,4 @@ pub(crate) trait GetDetail {
 }
 pub(crate) trait GetEdit {
     fn get_edit(&self) -> String;
-}
-
-impl GetLabel for IssueState {
-    fn get_label(&self) -> String {
-        if let IssueState::Open = self {
-            "Open".into()
-        } else {
-            "Closed".into()
-        }
-    }
-}
-
-impl GetLabel for Issue {
-    fn get_label(&self) -> String {
-        format!("{} {} {}", self.number, self.state.get_label(), self.title)
-    }
-}
-impl GetEdit for Issue {
-    fn get_edit(&self) -> String {
-        let id = self.number;
-        format!("[#{id}](../../issues/{id})")
-    }
-}
-impl GetDetail for Issue {
-    fn get_detail(&self) -> String {
-        let title = self.title.to_string();
-        format!(
-            "{} {} {}\n{}",
-            self.number,
-            self.state.get_label(),
-            title,
-            self.body.as_ref().unwrap_or(&title)
-        )
-    }
 }
