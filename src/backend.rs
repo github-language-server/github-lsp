@@ -82,6 +82,22 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("search_repo: {}", needle))
             .await;
+        let repos = self
+            .octocrab
+            .current()
+            .list_repos_for_authenticated_user()
+            .affiliation("organization_member")
+            .sort("updated")
+            .per_page(100)
+            .send()
+            .await
+            .map_err(|_| {
+                tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
+            })?;
+
+        for repo in repos {
+            println!("{}", repo.name);
+        }
         Ok(vec![])
     }
 
@@ -89,6 +105,19 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("search_owner: {}", needle))
             .await;
+        let users = octocrab::instance()
+            .search()
+            .users(needle)
+            // .sort("followers")
+            // .order("desc")
+            .send()
+            .await
+            .map_err(|_| {
+                tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
+            })?;
+        for user in users {
+            println!("{}", user.login);
+        }
         Ok(vec![])
     }
 
