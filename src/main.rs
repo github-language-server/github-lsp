@@ -24,7 +24,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sy
     let (stdin, stdout) = (stdin.compat(), stdout.compat_write());
 
     let (service, socket) = LspService::new(|client| {
-        Backend::new(client, octocrab, owner_repo.0, owner_repo.1, DashMap::new())
+        Backend::new(
+            client,
+            octocrab,
+            owner_repo.0,
+            owner_repo.1,
+            DashMap::new(),
+            DashMap::new(),
+        )
     });
     Server::new(stdin, stdout, socket).serve(service).await;
     Ok(())

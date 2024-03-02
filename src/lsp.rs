@@ -52,6 +52,8 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "initialized!")
             .await;
+
+        self.initialize().await;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -153,7 +155,7 @@ impl LanguageServer for Backend {
             "#" => self.search_issue_and_pr(position, parts.1).await,
             "@" => self.search_user(parts.1).await,
             "[" => self.search_wiki(parts.1).await,
-            "/" => self.search_repo(parts.1).await,
+            "/" => self.search_repo(position, parts.1).await,
             ":" => self.search_owner(parts.1).await,
             _ => Ok(vec![]),
         }

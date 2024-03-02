@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use octocrab::models::Repository;
 use octocrab::Octocrab;
 use ropey::Rope;
 use tower_lsp::jsonrpc::Result;
@@ -13,6 +14,7 @@ use crate::gh::{GetDetail, GetEdit, GetLabel};
 pub struct Backend {
     pub(crate) client: Client,
     pub(crate) document_map: DashMap<String, Rope>,
+    pub(crate) repository_map: DashMap<String, Repository>, //TODO: make our own light weight Repository?
     octocrab: Octocrab,
     owner: String,
     repo: String,
@@ -68,6 +70,21 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("search_user: {}", needle))
             .await;
+        //TODO: struggling with getting org members
+        //TODO: also merge in repo contributors
+        // let org_members = octocrab::instance()
+        //     .orgs("entur")
+        //     .list_members()
+        //     .send()
+        //     .await?;
+        // println!("{:?}", org_members);
+        // for om in org_members {
+        //     println!("{}", om.login);
+        // }
+        // let response: octocrab::Page<octocrab::models::Author> = octocrab
+        //     .get("https://api.github.com/orgs/entur/members", None::<&()>)
+        //     .await?;
+        // println!("{:?}", response);
         Ok(vec![])
     }
 
@@ -78,27 +95,36 @@ impl Backend {
         Ok(vec![])
     }
 
-    pub(crate) async fn search_repo(&self, needle: &str) -> Result<Vec<CompletionItem>> {
+    pub(crate) async fn search_repo(
+        &self,
+        position: Position,
+        needle: &str,
+    ) -> Result<Vec<CompletionItem>> {
         self.client
             .log_message(MessageType::INFO, format!("search_repo: {}", needle))
             .await;
-        let repos = self
-            .octocrab
-            .current()
-            .list_repos_for_authenticated_user()
-            .affiliation("organization_member")
-            .sort("updated")
-            .per_page(100)
-            .send()
-            .await
-            .map_err(|_| {
-                tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
-            })?;
-
-        for repo in repos {
-            println!("{}", repo.name);
-        }
-        Ok(vec![])
+        //TODO: should we enable searching for repos _all_ over github? Maybe?
+        let completion_items = self
+            .repository_map
+            .iter()
+            .filter(|repo| repo.name.starts_with(needle)) //TODO: smarter fuzzy match
+            .map(|repo| CompletionItem {
+                label: repo.get_label(),
+                detail: Some(repo.get_detail()),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: position.line,
+                            character: position.character - needle.len() as u32 - 1,
+                        },
+                        end: position,
+                    },
+                    new_text: repo.get_edit(),
+                })),
+                ..CompletionItem::default()
+            })
+            .collect::<Vec<CompletionItem>>();
+        Ok(completion_items)
     }
 
     pub(crate) async fn search_owner(&self, needle: &str) -> Result<Vec<CompletionItem>> {
@@ -126,6 +152,22 @@ impl Backend {
         self.document_map
             .insert(params.uri.to_string(), rope.clone());
     }
+    pub(crate) async fn initialize(&self) {
+        if let Ok(repos) = self
+            .octocrab
+            .current()
+            .list_repos_for_authenticated_user()
+            .affiliation("organization_member")
+            .sort("updated")
+            .per_page(100)
+            .send()
+            .await
+        {
+            for repo in repos {
+                self.repository_map.insert(repo.name.to_owned(), repo);
+            }
+        }
+    }
 
     pub fn new(
         client: Client,
@@ -133,6 +175,7 @@ impl Backend {
         owner: String,
         repo: String,
         document_map: DashMap<String, Rope>,
+        repository_map: DashMap<String, Repository>,
     ) -> Backend {
         Backend {
             client,
@@ -140,6 +183,7 @@ impl Backend {
             owner,
             repo,
             document_map,
+            repository_map,
         }
     }
 }

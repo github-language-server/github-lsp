@@ -1,4 +1,6 @@
 mod issue;
+mod repo;
+
 use std::fmt;
 
 use tokio::process::Command;
