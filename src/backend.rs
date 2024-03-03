@@ -9,7 +9,8 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{lsp_types::Position, Client};
 
-use crate::gh::{GetDetail, GetEdit, GetLabel};
+use crate::gh::wiki::WikiArticle;
+use crate::gh::{self, GetDetail, GetEdit, GetLabel};
 
 #[derive(Debug)]
 pub struct Backend {
@@ -18,12 +19,23 @@ pub struct Backend {
     pub(crate) repository_map: DashMap<String, Repository>,
     pub(crate) issue_map: DashMap<String, Issue>,
     pub(crate) member_map: DashMap<String, Author>,
+    pub(crate) wiki_map: DashMap<String, WikiArticle>,
     octocrab: Octocrab,
     owner: String,
     repo: String,
 }
 
 impl Backend {
+    const PER_PAGE: u8 = 100;
+
+    pub(crate) async fn initialize(&self) {
+        self.initialize_issues().await;
+        self.initialize_members().await;
+        self.initialize_repos_as("owner").await;
+        self.initialize_repos_as("organization_member").await;
+        self.initialize_wiki().await;
+    }
+
     pub(crate) async fn search_issue_and_pr(
         &self,
         position: Position,
@@ -36,18 +48,6 @@ impl Backend {
             )
             .await;
         //TODO: refresh issues
-        // let filter = format!("{} repo:{}/{}", needle, self.owner, self.repo);
-        // let page = self
-        //     .octocrab
-        //     .search()
-        //     .issues_and_pull_requests(&filter)
-        //     .sort("status")
-        //     .per_page(100)
-        //     .send()
-        //     .await
-        //     .map_err(|_| {
-        //         tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
-        //     })?;
         let completion_items = self
             .issue_map
             .iter()
@@ -102,11 +102,35 @@ impl Backend {
         Ok(completion_items)
     }
 
-    pub(crate) async fn search_wiki(&self, needle: &str) -> Result<Vec<CompletionItem>> {
+    pub(crate) async fn search_wiki(
+        &self,
+        position: Position,
+        needle: &str,
+    ) -> Result<Vec<CompletionItem>> {
         self.client
             .log_message(MessageType::INFO, format!("search_wiki: {}", needle))
             .await;
-        Ok(vec![])
+        let completion_items = self
+            .wiki_map
+            .iter()
+            .filter(|member| member.title.starts_with(needle)) //TODO: smarter fuzzy match
+            .map(|member| CompletionItem {
+                label: member.title.to_owned(),
+                detail: None,
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: position.line,
+                            character: position.character - needle.len() as u32 - 1,
+                        },
+                        end: position,
+                    },
+                    new_text: member.get_edit(),
+                })),
+                ..CompletionItem::default()
+            })
+            .collect::<Vec<CompletionItem>>();
+        Ok(completion_items)
     }
 
     pub(crate) async fn search_repo(
@@ -186,38 +210,72 @@ impl Backend {
         self.document_map
             .insert(params.uri.to_string(), rope.clone());
     }
-    pub(crate) async fn initialize(&self) {
-        self.initialize_repos().await;
-        self.initialize_issues().await;
-        self.initialize_members().await;
-    }
 
-    async fn initialize_repos(&self) {
-        let Ok(repos) = self
+    async fn initialize_repos_as(&self, affiliation: &str) {
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!("initialize_repos_as: {}", affiliation),
+            )
+            .await;
+        let mut page: u8 = 0;
+        let mut repos: Vec<Repository> = vec![];
+        while let Ok(mut page_repos) = self
             .octocrab
             .current()
             .list_repos_for_authenticated_user()
-            .affiliation("organization_member")
+            .affiliation(affiliation)
             .sort("updated")
-            .per_page(100)
+            .per_page(Backend::PER_PAGE)
+            .page(page)
             .send()
             .await
-        else {
+        {
+            if page_repos.items.is_empty() {
+                break;
+            }
+            repos.append(page_repos.items.as_mut());
+            page += 1;
+        }
+        if repos.is_empty() {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("No repos found with affiliation {}", affiliation),
+                )
+                .await;
             return;
         };
         repos.into_iter().for_each(|repo| {
-            self.repository_map.insert(repo.name.to_owned(), repo);
+            let _ = self.repository_map.insert(repo.name.to_owned(), repo);
         });
     }
 
     async fn initialize_issues(&self) {
-        let Ok(issues) = self
+        self.client
+            .log_message(MessageType::INFO, "initialize_issues")
+            .await;
+        let mut page: u8 = 0;
+        let mut issues: Vec<Issue> = vec![];
+        while let Ok(mut page_issues) = self
             .octocrab
             .issues(&self.owner, &self.repo)
             .list()
+            .per_page(Backend::PER_PAGE)
+            .page(page)
             .send()
             .await
-        else {
+        {
+            if page_issues.items.is_empty() {
+                break;
+            }
+            issues.append(page_issues.items.as_mut());
+            page += 1;
+        }
+        if issues.is_empty() {
+            self.client
+                .log_message(MessageType::WARNING, "No issues found")
+                .await;
             return;
         };
         issues.into_iter().for_each(|issue| {
@@ -225,15 +283,49 @@ impl Backend {
         });
     }
 
+    async fn initialize_wiki(&self) {
+        self.client
+            .log_message(MessageType::INFO, "initialize_wiki")
+            .await;
+        let wikis = gh::wiki::find_wiki_articles(&self.owner, &self.repo).await;
+        match wikis {
+            Ok(articles) => articles.into_iter().for_each(|article| {
+                self.wiki_map.insert(article.title.to_owned(), article);
+            }),
+            Err(_) => {
+                self.client
+                    .log_message(MessageType::WARNING, "No wiki found")
+                    .await;
+            }
+        }
+        //TODO: load local .md files and make relative links?
+    }
+
     async fn initialize_members(&self) {
-        let Ok(members) = self
+        self.client
+            .log_message(MessageType::INFO, "initialize_members")
+            .await;
+        let mut page: u8 = 0;
+        let mut members: Vec<Author> = vec![];
+        while let Ok(mut page_members) = self
             .octocrab
-            .orgs("entur")
+            .orgs(self.owner.to_owned())
             .list_members()
-            .page(0_u32)
+            .per_page(Backend::PER_PAGE)
+            .page(page)
             .send()
             .await
-        else {
+        {
+            if page_members.items.is_empty() {
+                break;
+            }
+            members.append(page_members.items.as_mut());
+            page += 1;
+        }
+        if members.is_empty() {
+            self.client
+                .log_message(MessageType::WARNING, "No members found")
+                .await;
             return;
         };
         members.into_iter().for_each(|member| {
@@ -251,6 +343,7 @@ impl Backend {
             repository_map: DashMap::new(),
             issue_map: DashMap::new(),
             member_map: DashMap::new(),
+            wiki_map: DashMap::new(),
         }
     }
 }

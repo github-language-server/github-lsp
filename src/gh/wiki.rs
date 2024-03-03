@@ -1,17 +1,32 @@
 use reqwest::Client;
 use select::{document::Document, predicate::Name};
 
+use super::GetEdit;
+
+#[derive(Debug)]
 pub(crate) struct WikiArticle {
-    title: String,
-    uri: String,
+    pub title: String,
+    pub uri: String,
 }
-pub(crate) async fn find_wiki_articles(
-    client: &Client,
-    url: &str,
+
+impl GetEdit for WikiArticle {
+    fn get_edit(&self) -> String {
+        let title = self.title.to_owned();
+        let uri = self.uri.to_owned();
+        format!("[{title}]({uri})")
+    }
+}
+
+pub async fn find_wiki_articles(
+    owner: &str,
+    repo: &str,
 ) -> Result<Vec<WikiArticle>, reqwest::Error> {
+    let client = Client::new();
+    //TODO: find a way to support private wikis?
+    let url = format!("https://github.com/{owner}/{repo}/wiki");
     let res = client.get(url).send().await?;
     let body = res.text().await?;
-    let ret: Vec<WikiArticle> = Document::from(body.as_str())
+    let mut ret: Vec<WikiArticle> = Document::from(body.as_str())
         .find(Name("a"))
         .filter(|a| a.attr("href").is_some())
         .filter(|a| {
@@ -26,6 +41,10 @@ pub(crate) async fn find_wiki_articles(
             uri: link.attr("href").unwrap().to_string(),
         })
         .collect();
+    ret.push(WikiArticle {
+        title: "Home".into(),
+        uri: format!("/{owner}/{repo}/wiki"),
+    });
 
     Ok(ret)
 }

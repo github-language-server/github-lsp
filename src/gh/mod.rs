@@ -1,7 +1,7 @@
 mod author;
 mod issue;
 mod repo;
-mod wiki;
+pub(crate) mod wiki;
 
 use std::fmt;
 
