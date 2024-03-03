@@ -1,5 +1,4 @@
 use backend::Backend;
-use dashmap::DashMap;
 use octocrab::Octocrab;
 use tower_lsp::{LspService, Server};
 
@@ -23,16 +22,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sy
     #[cfg(feature = "runtime-agnostic")]
     let (stdin, stdout) = (stdin.compat(), stdout.compat_write());
 
-    let (service, socket) = LspService::new(|client| {
-        Backend::new(
-            client,
-            octocrab,
-            owner_repo.0,
-            owner_repo.1,
-            DashMap::new(),
-            DashMap::new(),
-        )
-    });
+    let (service, socket) =
+        LspService::new(|client| Backend::new(client, octocrab, owner_repo.0, owner_repo.1));
     Server::new(stdin, stdout, socket).serve(service).await;
     Ok(())
 }

@@ -1,5 +1,7 @@
+mod author;
 mod issue;
 mod repo;
+mod wiki;
 
 use std::fmt;
 

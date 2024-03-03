@@ -1,5 +1,6 @@
 use dashmap::DashMap;
-use octocrab::models::Repository;
+use octocrab::models::issues::Issue;
+use octocrab::models::{Author, Repository};
 use octocrab::Octocrab;
 use ropey::Rope;
 use tower_lsp::jsonrpc::Result;
@@ -14,7 +15,9 @@ use crate::gh::{GetDetail, GetEdit, GetLabel};
 pub struct Backend {
     pub(crate) client: Client,
     pub(crate) document_map: DashMap<String, Rope>,
-    pub(crate) repository_map: DashMap<String, Repository>, //TODO: make our own light weight Repository?
+    pub(crate) repository_map: DashMap<String, Repository>,
+    pub(crate) issue_map: DashMap<String, Issue>,
+    pub(crate) member_map: DashMap<String, Author>,
     octocrab: Octocrab,
     owner: String,
     repo: String,
@@ -32,21 +35,23 @@ impl Backend {
                 format!("search_issue_and_pr: {}", needle),
             )
             .await;
-        let filter = format!("{} repo:{}/{}", needle, self.owner, self.repo);
-        let page = self
-            .octocrab
-            .search()
-            .issues_and_pull_requests(&filter)
-            .sort("status")
-            .per_page(10) //TODO: figure out a setting for this
-            .send()
-            .await
-            .map_err(|_| {
-                tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
-            })?;
-        let completion_items = page
-            .items
+        //TODO: refresh issues
+        // let filter = format!("{} repo:{}/{}", needle, self.owner, self.repo);
+        // let page = self
+        //     .octocrab
+        //     .search()
+        //     .issues_and_pull_requests(&filter)
+        //     .sort("status")
+        //     .per_page(100)
+        //     .send()
+        //     .await
+        //     .map_err(|_| {
+        //         tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
+        //     })?;
+        let completion_items = self
+            .issue_map
             .iter()
+            .filter(|issue| issue.title.starts_with(needle)) //TODO: smarter fuzzy match
             .map(|issue| CompletionItem {
                 label: issue.get_label(),
                 detail: Some(issue.get_detail()),
@@ -66,26 +71,35 @@ impl Backend {
         Ok(completion_items)
     }
 
-    pub(crate) async fn search_user(&self, needle: &str) -> Result<Vec<CompletionItem>> {
+    pub(crate) async fn search_user(
+        &self,
+        position: Position,
+        needle: &str,
+    ) -> Result<Vec<CompletionItem>> {
         self.client
             .log_message(MessageType::INFO, format!("search_user: {}", needle))
             .await;
-        //TODO: struggling with getting org members
-        //TODO: also merge in repo contributors
-        // let org_members = octocrab::instance()
-        //     .orgs("entur")
-        //     .list_members()
-        //     .send()
-        //     .await?;
-        // println!("{:?}", org_members);
-        // for om in org_members {
-        //     println!("{}", om.login);
-        // }
-        // let response: octocrab::Page<octocrab::models::Author> = octocrab
-        //     .get("https://api.github.com/orgs/entur/members", None::<&()>)
-        //     .await?;
-        // println!("{:?}", response);
-        Ok(vec![])
+        let completion_items = self
+            .member_map
+            .iter()
+            .filter(|member| member.login.starts_with(needle)) //TODO: smarter fuzzy match
+            .map(|member| CompletionItem {
+                label: member.get_label(),
+                detail: Some(member.get_detail()),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: position.line,
+                            character: position.character - needle.len() as u32 - 1,
+                        },
+                        end: position,
+                    },
+                    new_text: member.get_edit(),
+                })),
+                ..CompletionItem::default()
+            })
+            .collect::<Vec<CompletionItem>>();
+        Ok(completion_items)
     }
 
     pub(crate) async fn search_wiki(&self, needle: &str) -> Result<Vec<CompletionItem>> {
@@ -127,7 +141,11 @@ impl Backend {
         Ok(completion_items)
     }
 
-    pub(crate) async fn search_owner(&self, needle: &str) -> Result<Vec<CompletionItem>> {
+    pub(crate) async fn search_owner(
+        &self,
+        position: Position,
+        needle: &str,
+    ) -> Result<Vec<CompletionItem>> {
         self.client
             .log_message(MessageType::INFO, format!("search_owner: {}", needle))
             .await;
@@ -141,10 +159,26 @@ impl Backend {
             .map_err(|_| {
                 tower_lsp::jsonrpc::Error::new(tower_lsp::jsonrpc::ErrorCode::MethodNotFound)
             })?;
-        for user in users {
-            println!("{}", user.login);
-        }
-        Ok(vec![])
+        let completion_items = users
+            .into_iter()
+            .filter(|member| member.login.starts_with(needle)) //TODO: smarter fuzzy match
+            .map(|member| CompletionItem {
+                label: member.get_label(),
+                detail: Some(member.get_detail()),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: Range {
+                        start: Position {
+                            line: position.line,
+                            character: position.character - needle.len() as u32 - 1,
+                        },
+                        end: position,
+                    },
+                    new_text: member.get_edit(),
+                })),
+                ..CompletionItem::default()
+            })
+            .collect::<Vec<CompletionItem>>();
+        Ok(completion_items)
     }
 
     pub(crate) async fn on_change(&self, params: TextDocumentItem) {
@@ -153,7 +187,13 @@ impl Backend {
             .insert(params.uri.to_string(), rope.clone());
     }
     pub(crate) async fn initialize(&self) {
-        if let Ok(repos) = self
+        self.initialize_repos().await;
+        self.initialize_issues().await;
+        self.initialize_members().await;
+    }
+
+    async fn initialize_repos(&self) {
+        let Ok(repos) = self
             .octocrab
             .current()
             .list_repos_for_authenticated_user()
@@ -162,28 +202,55 @@ impl Backend {
             .per_page(100)
             .send()
             .await
-        {
-            for repo in repos {
-                self.repository_map.insert(repo.name.to_owned(), repo);
-            }
-        }
+        else {
+            return;
+        };
+        repos.into_iter().for_each(|repo| {
+            self.repository_map.insert(repo.name.to_owned(), repo);
+        });
     }
 
-    pub fn new(
-        client: Client,
-        octocrab: Octocrab,
-        owner: String,
-        repo: String,
-        document_map: DashMap<String, Rope>,
-        repository_map: DashMap<String, Repository>,
-    ) -> Backend {
+    async fn initialize_issues(&self) {
+        let Ok(issues) = self
+            .octocrab
+            .issues(&self.owner, &self.repo)
+            .list()
+            .send()
+            .await
+        else {
+            return;
+        };
+        issues.into_iter().for_each(|issue| {
+            self.issue_map.insert(issue.title.to_owned(), issue);
+        });
+    }
+
+    async fn initialize_members(&self) {
+        let Ok(members) = self
+            .octocrab
+            .orgs("entur")
+            .list_members()
+            .page(0_u32)
+            .send()
+            .await
+        else {
+            return;
+        };
+        members.into_iter().for_each(|member| {
+            self.member_map.insert(member.login.to_owned(), member);
+        });
+    }
+
+    pub fn new(client: Client, octocrab: Octocrab, owner: String, repo: String) -> Backend {
         Backend {
             client,
             octocrab,
             owner,
             repo,
-            document_map,
-            repository_map,
+            document_map: DashMap::new(),
+            repository_map: DashMap::new(),
+            issue_map: DashMap::new(),
+            member_map: DashMap::new(),
         }
     }
 }
