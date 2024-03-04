@@ -1,6 +1,6 @@
 # github-lsp
 
-[![https://asciinema.org/a/645195](demo.gif)](https://asciinema.org/a/645195)
+[![https://asciinema.org/a/645196](demo.gif)](https://asciinema.org/a/645196)
 
 [![CI](https://github.com/AlexanderBrevig/github-lsp/actions/workflows/ci.yml/badge.svg)](https://github.com/AlexanderBrevig/github-lsp/actions/workflows/ci.yml)
 
