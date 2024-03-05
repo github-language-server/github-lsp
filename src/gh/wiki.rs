@@ -13,7 +13,7 @@ impl GetEdit for WikiArticle {
     fn get_edit(&self) -> String {
         let title = self.title.to_owned();
         let uri = self.uri.to_owned();
-        format!("[{title}]({uri})")
+        format!("[{title}](https://github.com{uri})")
     }
 }
 
