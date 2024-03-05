@@ -33,7 +33,7 @@ impl GetDetail for Issue {
     fn get_detail(&self) -> String {
         let title = self.title.to_string();
         format!(
-            "{} [{}] {}\n{}",
+            "# {} [{}] {}\n\n{}",
             self.number,
             self.state.get_label(),
             title,
