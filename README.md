@@ -47,8 +47,6 @@ You can now configure your editor to use this LSP on `stdio`.
 
 ### `#` trigger
 
-https://github.com/github-language-server/github-lsp/issues/1
-
 [#1](https://github.com/github-language-server/github-lsp/issues/1)
 [#2](https://github.com/github-language-server/github-lsp/issues/2)
 
