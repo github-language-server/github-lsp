@@ -42,3 +42,26 @@ cargo install --path .
 ```
 
 You can now configure your editor to use this LSP on `stdio`.
+
+## Items added by LSP
+
+### `#` trigger
+
+[#1](https://github.com/github-language-server/github-lsp/issues/1)
+[#2](https://github.com/github-language-server/github-lsp/issues/2)
+
+### `@` trigger
+
+[AlexanderBrevig](https://github.com/AlexanderBrevig)
+
+### `:` trigger
+
+[github-language-server](https://github.com/github-language-server)
+
+### `/` trigger
+
+[github-language-server/github-lsp](https://github.com/github-language-server/github-lsp)
+
+### `[` trigger (Home is always suggested)
+
+[Home](/github-language-server/github-lsp/wiki)
