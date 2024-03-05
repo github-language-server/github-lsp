@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use octocrab::models::issues::Issue;
 use octocrab::models::{Author, Repository};
+use octocrab::params::State;
 use octocrab::Octocrab;
 use ropey::Rope;
 use tower_lsp::jsonrpc::Result;
@@ -261,6 +262,7 @@ impl Backend {
             .octocrab
             .issues(&self.owner, &self.repo)
             .list()
+            .state(State::All)
             .per_page(Backend::PER_PAGE)
             .page(page)
             .send()
