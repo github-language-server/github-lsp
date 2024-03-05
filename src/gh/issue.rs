@@ -14,7 +14,7 @@ impl GetLabel for IssueState {
 
 impl GetLabel for Issue {
     fn get_label(&self) -> String {
-        format!("#{} {} {}", self.number, self.state.get_label(), self.title)
+        format!("#{} [{}] {}", self.number, self.state.get_label(), self.title)
     }
 }
 impl GetEdit for Issue {
@@ -33,7 +33,7 @@ impl GetDetail for Issue {
     fn get_detail(&self) -> String {
         let title = self.title.to_string();
         format!(
-            "{} {} {}\n{}",
+            "{} [{}] {}\n{}",
             self.number,
             self.state.get_label(),
             title,
