@@ -52,7 +52,7 @@ impl Backend {
         let completion_items = self
             .issue_map
             .iter()
-            .filter(|issue| issue.title.starts_with(needle)) //TODO: smarter fuzzy match
+            .filter(|issue| issue.get_detail().contains(needle)) //TODO: smarter fuzzy match
             .map(|issue| CompletionItem {
                 label: issue.get_label(),
                 detail: Some(issue.get_detail()),
@@ -83,7 +83,7 @@ impl Backend {
         let completion_items = self
             .member_map
             .iter()
-            .filter(|member| member.login.starts_with(needle)) //TODO: smarter fuzzy match
+            .filter(|member| member.get_detail().contains(needle)) //TODO: smarter fuzzy match
             .map(|member| CompletionItem {
                 label: member.get_label(),
                 detail: Some(member.get_detail()),
@@ -114,7 +114,7 @@ impl Backend {
         let completion_items = self
             .wiki_map
             .iter()
-            .filter(|member| member.title.starts_with(needle)) //TODO: smarter fuzzy match
+            .filter(|member| member.title.contains(needle)) //TODO: smarter fuzzy match
             .map(|member| CompletionItem {
                 label: member.title.to_owned(),
                 detail: None,
@@ -146,7 +146,7 @@ impl Backend {
         let completion_items = self
             .repository_map
             .iter()
-            .filter(|repo| repo.name.starts_with(needle)) //TODO: smarter fuzzy match
+            .filter(|repo| repo.get_detail().contains(needle)) //TODO: smarter fuzzy match
             .map(|repo| CompletionItem {
                 label: repo.get_label(),
                 detail: Some(repo.get_detail()),
@@ -214,9 +214,9 @@ impl Backend {
 
     async fn initialize_repos_as(&self, affiliation: &str) {
         self.client
-            .log_message(
+            .show_message(
                 MessageType::INFO,
-                format!("initialize_repos_as: {}", affiliation),
+                format!("initializing repos with affiliation `{}`", affiliation),
             )
             .await;
         let mut page: u8 = 0;
@@ -254,7 +254,7 @@ impl Backend {
 
     async fn initialize_issues(&self) {
         self.client
-            .log_message(MessageType::INFO, "initialize_issues")
+            .show_message(MessageType::LOG, "initializing issues")
             .await;
         let mut page: u8 = 0;
         let mut issues: Vec<Issue> = vec![];
@@ -287,7 +287,7 @@ impl Backend {
 
     async fn initialize_wiki(&self) {
         self.client
-            .log_message(MessageType::INFO, "initialize_wiki")
+            .show_message(MessageType::INFO, "initializing wiki")
             .await;
         let wikis = gh::wiki::find_wiki_articles(&self.owner, &self.repo).await;
         match wikis {
@@ -305,7 +305,7 @@ impl Backend {
 
     async fn initialize_members(&self) {
         self.client
-            .log_message(MessageType::INFO, "initialize_members")
+            .show_message(MessageType::INFO, "initializing members")
             .await;
         let mut page: u8 = 0;
         let mut members: Vec<Author> = vec![];

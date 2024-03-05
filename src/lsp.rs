@@ -22,9 +22,6 @@ impl LanguageServer for Backend {
                         })),
                     },
                 )),
-                // text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                //     TextDocumentSyncKind::FULL,
-                // )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
                     trigger_characters: Some(vec![
@@ -38,15 +35,16 @@ impl LanguageServer for Backend {
                     all_commit_characters: None,
                     ..Default::default()
                 }),
-                execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["dummy.do_something".to_string()],
-                    work_done_progress_options: Default::default(),
-                }),
+                // execute_command_provider: Some(ExecuteCommandOptions {
+                //     commands: vec!["dummy.do_something".to_string()],
+                //     work_done_progress_options: Default::default(),
+                // }),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
                         change_notifications: Some(OneOf::Left(true)),
                     }),
+
                     file_operations: None,
                 }),
                 ..ServerCapabilities::default()
@@ -57,9 +55,6 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         self.initialize().await;
-        self.client
-            .log_message(MessageType::INFO, "initialized!")
-            .await;
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -168,11 +163,17 @@ impl LanguageServer for Backend {
             .document_map
             .get(&uri.to_string())
             .ok_or(tower_lsp::jsonrpc::Error::invalid_request())?;
+
         let line = rope
             .get_line(position.line as usize)
-            .ok_or(tower_lsp::jsonrpc::Error::internal_error())?
-            .to_string();
-        let line = line.split_at(position.character as usize).0;
+            .ok_or(tower_lsp::jsonrpc::Error::internal_error())?;
+        let character_pos = if position.character as usize >= line.len_chars() {
+            line.len_chars() - 1
+        } else {
+            position.character as usize
+        };
+        let line = line.to_string();
+        let line = line.split_at(character_pos).0;
         let word = line
             .chars()
             .rev()
@@ -181,7 +182,11 @@ impl LanguageServer for Backend {
             .chars()
             .rev()
             .collect::<String>();
-        let parts = word.split_at(1);
+        let parts = if word.len() <= 1 {
+            (word.as_str(), "")
+        } else {
+            word.split_at(1)
+        };
         let completions = match parts.0 {
             "#" => self.search_issue_and_pr(position, parts.1).await,
             "@" => self.search_user(position, parts.1).await,
