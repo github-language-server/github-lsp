@@ -64,4 +64,4 @@ You can now configure your editor to use this LSP on `stdio`.
 
 ### `[` trigger (Home is always suggested)
 
-[Home](/github-language-server/github-lsp/wiki)
+[Home](https://github.com/github-language-server/github-lsp/wiki)
