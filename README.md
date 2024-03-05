@@ -20,6 +20,15 @@ Use this LSP in conjunction with some other Markdown LSP if you want gotoDefinit
 
 [Issues](https://github.com/github-language-server/github-lsp/issues) and [PRs](https://github.com/github-language-server/github-lsp/pulls) are very welcome!
 
+## Requirements
+
+This LSP uses the amazing [gh](https://cli.github.com/) so you will need to install that and auth with it.
+We currently use it for retrieving your auth token, and for meta about the current repo.
+
+```shell
+gh auth login
+```
+
 ## Install
 
 ```shell
