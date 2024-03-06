@@ -9,8 +9,10 @@ use tokio::process::Command;
 
 #[derive(Debug)]
 pub enum GitHubCLIError {
+    NoRepo,
     NoToken,
     NoOwner,
+    NotUTF8,
 }
 impl std::error::Error for GitHubCLIError {}
 impl fmt::Display for GitHubCLIError {
@@ -18,6 +20,8 @@ impl fmt::Display for GitHubCLIError {
         match self {
             GitHubCLIError::NoOwner => write!(f, "No Owner found"),
             GitHubCLIError::NoToken => write!(f, "No Token found"),
+            GitHubCLIError::NotUTF8 => write!(f, "No valid UTF-8 found"),
+            GitHubCLIError::NoRepo => write!(f, "No gh repo found"),
         }
     }
 }
@@ -39,7 +43,7 @@ async fn gh_cli_token() -> Result<String, GitHubCLIError> {
         .stdout
         .to_owned();
     let output = String::from_utf8(output)
-        .map_err(|_| GitHubCLIError::NoToken)?
+        .map_err(|_| GitHubCLIError::NotUTF8)?
         .trim()
         .to_owned();
     Ok(output)
@@ -55,11 +59,11 @@ pub async fn gh_cli_owner_name() -> std::result::Result<(String, String), GitHub
         .arg(".owner.login,.name")
         .output()
         .await
-        .map_err(|_| GitHubCLIError::NoOwner)?
+        .map_err(|_| GitHubCLIError::NoRepo)?
         .stdout
         .to_owned();
     String::from_utf8(output)
-        .map_err(|_| GitHubCLIError::NoOwner)?
+        .map_err(|_| GitHubCLIError::NotUTF8)?
         .trim()
         .split_once('\n')
         .map(|on| (on.0.to_string(), on.1.to_string()))
