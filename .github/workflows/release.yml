@@ -1,3 +1,5 @@
+# A huge thanks to the helix-editor project for this
+# If you're here for inspiration, please go to the original source
 # https://github.com/helix-editor/helix/blob/master/.github/workflows/release.yml#L14-L18
 name: Release
 on:
@@ -30,22 +32,27 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: x86_64-unknown-linux-gnu
+            cross: false
           - build: aarch64-linux
             os: ubuntu-latest
             rust: stable
             target: aarch64-unknown-linux-gnu
+            cross: true
           - build: x86_64-macos
             os: macos-latest
             rust: stable
             target: x86_64-apple-darwin
+            cross: false
           - build: x86_64-windows
             os: windows-latest
             rust: stable
             target: x86_64-pc-windows-msvc
+            cross: false
           - build: aarch64-macos
             os: macos-latest
             rust: stable
             target: aarch64-apple-darwin
+            cross: false
 
     steps:
       - name: Checkout sources
@@ -56,6 +63,12 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           target: ${{ matrix.target }}
+
+      - name: Install Cross
+        if: "matrix.cross"
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross.git --rev 47df5c76e7cba682823a0b6aa6d95c17b31ba63a
+          echo "CARGO=cross" >> $GITHUB_ENV
 
       - name: Run cargo test
         run: ${{ env.CARGO }} test --release --locked --target ${{ matrix.target }} --workspace
