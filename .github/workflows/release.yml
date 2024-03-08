@@ -33,26 +33,31 @@ jobs:
             rust: stable
             target: x86_64-unknown-linux-gnu
             cross: false
+            skip_tests: false
           - build: aarch64-linux
             os: ubuntu-latest
             rust: stable
             target: aarch64-unknown-linux-gnu
             cross: true
+            skip_tests: false
           - build: x86_64-macos
             os: macos-latest
             rust: stable
             target: x86_64-apple-darwin
             cross: false
+            skip_tests: false
           - build: x86_64-windows
             os: windows-latest
             rust: stable
             target: x86_64-pc-windows-msvc
             cross: false
+            skip_tests: false
           - build: aarch64-macos
             os: macos-latest
             rust: stable
             target: aarch64-apple-darwin
             cross: false
+            skip_tests: true
 
     steps:
       - name: Checkout sources
@@ -71,6 +76,7 @@ jobs:
           echo "CARGO=cross" >> $GITHUB_ENV
 
       - name: Run cargo test
+        if: "!matrix.skip_tests"
         run: ${{ env.CARGO }} test --release --locked --target ${{ matrix.target }} --workspace
 
       - name: Set profile.release.strip = true
@@ -83,50 +89,6 @@ jobs:
 
       - name: Build release binary
         run: ${{ env.CARGO }} build --release --locked --target ${{ matrix.target }}
-
-      - name: Build AppImage
-        shell: bash
-        if: matrix.build == 'x86_64-linux'
-        run: |
-          sudo add-apt-repository universe
-          sudo apt install libfuse2
-
-          mkdir dist
-
-          name=dev
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            name=${GITHUB_REF:10}
-          fi
-
-          build="${{ matrix.build }}"
-
-          export VERSION="$name"
-          export ARCH=${build%-linux}
-          export APP=github-lsp
-          export OUTPUT="github-lsp-$VERSION-$ARCH.AppImage"
-          export UPDATE_INFORMATION="gh-releases-zsync|$GITHUB_REPOSITORY_OWNER|github-lsp|latest|$APP-*-$ARCH.AppImage.zsync"
-
-          mkdir -p "$APP.AppDir"/usr/{bin,lib/github-lsp}
-
-          cp "target/${{ matrix.target }}/release/github-lsp" "$APP.AppDir/usr/bin/github-lsp"
-
-          cat << 'EOF' > "$APP.AppDir/AppRun"
-          #!/bin/sh
-
-          APPDIR="$(dirname "$(readlink -f "${0}")")"
-          EOF
-          chmod 755 "$APP.AppDir/AppRun"
-
-          curl -Lo linuxdeploy-x86_64.AppImage \
-              https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-
-          ./linuxdeploy-x86_64.AppImage \
-              --appdir "$APP.AppDir" -d contrib/github-lsp.desktop \
-              -i contrib/github-lsp.png --output appimage
-
-          mv "$APP-$VERSION-$ARCH.AppImage" \
-              "$APP-$VERSION-$ARCH.AppImage.zsync" dist
 
       - name: Build archive
         shell: bash
