@@ -12,11 +12,11 @@ This is a tool for getting link suggestions while writing READMEs and GitHub Wik
 
 Use this LSP in conjunction with some other Markdown LSP if you want gotoDefinition et.al. This LSP only focuses on adding autocomplete to
 
-* [x] `#` Issues and PRs
-* [x] `[` Public Wiki Pages
-* [x] `:` Organizations / Owners
-* [x] `/` Repositories (yours and the orgs you are part of, no global search yet)
-* [x] `@` Organization Members
+- [x] `#` Issues and PRs
+- [x] `[` Public Wiki Pages
+- [x] `:` Organizations / Owners
+- [x] `/` Repositories (yours and the orgs you are part of, no global search yet)
+- [x] `@` Organization Members
 
 [Issues](https://github.com/github-language-server/github-lsp/issues) and [PRs](https://github.com/github-language-server/github-lsp/pulls) are very welcome!
 
@@ -47,8 +47,8 @@ You can now configure your editor to use this LSP on `stdio`.
 
 ### `#` trigger
 
-[#1](https://github.com/github-language-server/github-lsp/issues/1)
-[#2](https://github.com/github-language-server/github-lsp/issues/2)
+[#1: Example open issue](https://github.com/github-language-server/github-lsp/issues/1)
+[#2: Example closed issue](https://github.com/github-language-server/github-lsp/issues/2)
 
 ### `@` trigger
 
