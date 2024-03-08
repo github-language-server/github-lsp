@@ -1,0 +1,196 @@
+# https://github.com/helix-editor/helix/blob/master/.github/workflows/release.yml#L14-L18
+name: Release
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+    branches:
+      - "ci-*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+
+env:
+  preview: ${{ !startsWith(github.ref, 'refs/tags/') || github.repository != 'github-language-server/github-lsp' }}
+
+jobs:
+  dist:
+    name: Dist
+    env:
+      CARGO: cargo
+      TARGET_DIR: ./target
+      RUST_BACKTRACE: 1
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # don't fail other jobs if one fails
+      matrix:
+        build: [x86_64-linux, x86_64-macos, x86_64-windows] #, x86_64-win-gnu, win32-msvc
+        include:
+          - build: x86_64-linux
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+          - build: aarch64-linux
+            os: ubuntu-latest
+            rust: stable
+            target: aarch64-unknown-linux-gnu
+          - build: x86_64-macos
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+          - build: x86_64-windows
+            os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+          - build: aarch64-macos
+            os: macos-latest
+            rust: stable
+            target: aarch64-apple-darwin
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install ${{ matrix.rust }} toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+
+      - name: Run cargo test
+        run: ${{ env.CARGO }} test --release --locked --target ${{ matrix.target }} --workspace
+
+      - name: Set profile.release.strip = true
+        shell: bash
+        run: |
+          cat >> .cargo/config.toml <<EOF
+          [profile.release]
+          strip = true
+          EOF
+
+      - name: Build release binary
+        run: ${{ env.CARGO }} build --release --locked --target ${{ matrix.target }}
+
+      - name: Build AppImage
+        shell: bash
+        if: matrix.build == 'x86_64-linux'
+        run: |
+          sudo add-apt-repository universe
+          sudo apt install libfuse2
+
+          mkdir dist
+
+          name=dev
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            name=${GITHUB_REF:10}
+          fi
+
+          build="${{ matrix.build }}"
+
+          export VERSION="$name"
+          export ARCH=${build%-linux}
+          export APP=github-lsp
+          export OUTPUT="github-lsp-$VERSION-$ARCH.AppImage"
+          export UPDATE_INFORMATION="gh-releases-zsync|$GITHUB_REPOSITORY_OWNER|github-lsp|latest|$APP-*-$ARCH.AppImage.zsync"
+
+          mkdir -p "$APP.AppDir"/usr/{bin,lib/github-lsp}
+
+          cp "target/${{ matrix.target }}/release/github-lsp" "$APP.AppDir/usr/bin/github-lsp"
+
+          cat << 'EOF' > "$APP.AppDir/AppRun"
+          #!/bin/sh
+
+          APPDIR="$(dirname "$(readlink -f "${0}")")"
+          EOF
+          chmod 755 "$APP.AppDir/AppRun"
+
+          curl -Lo linuxdeploy-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir "$APP.AppDir" -d contrib/github-lsp.desktop \
+              -i contrib/github-lsp.png --output appimage
+
+          mv "$APP-$VERSION-$ARCH.AppImage" \
+              "$APP-$VERSION-$ARCH.AppImage.zsync" dist
+
+      - name: Build archive
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "windows-2019" ]; then
+            cp "target/${{ matrix.target }}/release/github-lsp.exe" "dist/"
+          else
+            cp "target/${{ matrix.target }}/release/github-lsp" "dist/"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bins-${{ matrix.build }}
+          path: dist
+
+  publish:
+    name: Publish
+    needs: [dist]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+
+      - name: Build archive
+        shell: bash
+        run: |
+          set -ex
+
+          source="$(pwd)"
+
+          cd "$(mktemp -d)"
+          mv $source/bins-* .
+          mkdir dist
+
+          for dir in bins-* ; do
+              platform=${dir#"bins-"}
+              if [[ $platform =~ "windows" ]]; then
+                  exe=".exe"
+              fi
+              pkgname=github-lsp-$GITHUB_REF_NAME-$platform
+              mkdir -p $pkgname
+              cp $source/LICENSE $source/README.md $pkgname
+              mkdir $pkgname/contrib
+              cp -r $source/contrib/completion $pkgname/contrib
+              mv bins-$platform/github-lsp$exe $pkgname
+              chmod +x $pkgname/github-lsp$exe
+
+              if [[ "$platform" = "x86_64-linux" ]]; then
+                  mv bins-$platform/github-lsp-*.AppImage* dist/
+              fi
+
+              if [ "$exe" = "" ]; then
+                  tar cJf dist/$pkgname.tar.xz $pkgname
+              else
+                  7z a -r dist/$pkgname.zip $pkgname
+              fi
+          done
+
+          tar cJf dist/github-lsp-$GITHUB_REF_NAME-source.tar.xz -C $source .
+          mv dist $source/
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        if: env.preview == 'false'
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/*
+          file_glob: true
+          tag: ${{ github.ref_name }}
+          overwrite: true
+
+      - name: Upload binaries as artifact
+        uses: actions/upload-artifact@v4
+        if: env.preview == 'true'
+        with:
+          name: release
+          path: dist/*
