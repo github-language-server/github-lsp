@@ -140,14 +140,8 @@ jobs:
               pkgname=github-lsp-$GITHUB_REF_NAME-$platform
               mkdir -p $pkgname
               cp $source/LICENSE $source/README.md $pkgname
-              mkdir $pkgname/contrib
-              cp -r $source/contrib/completion $pkgname/contrib
               mv bins-$platform/github-lsp$exe $pkgname
               chmod +x $pkgname/github-lsp$exe
-
-              if [[ "$platform" = "x86_64-linux" ]]; then
-                  mv bins-$platform/github-lsp-*.AppImage* dist/
-              fi
 
               if [ "$exe" = "" ]; then
                   tar cJf dist/$pkgname.tar.xz $pkgname
