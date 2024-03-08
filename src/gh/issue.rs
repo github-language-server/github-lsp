@@ -25,13 +25,14 @@ impl GetLabel for Issue {
 impl GetEdit for Issue {
     fn get_edit(&self) -> String {
         let id = self.number;
+        let title = &self.title;
         let url = self
             .url
             .to_string()
             .replace("api.", "")
             .replace("repos/", "");
         //TODO: cleanup & consider just printing the full URL and let GitHub format it
-        format!("[#{id}]({url})")
+        format!("[#{id}: {title}]({url})")
     }
 }
 impl GetDetail for Issue {
