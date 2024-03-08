@@ -70,7 +70,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Install ssl
-        if: "matrix.build == aarch64-linux"
+        if: "matrix.build == 'aarch64-linux'"
         run: |
           sudo apt-get update
           sudo apt-get -y install pkg-config libudev-dev libssl-dev
