@@ -1,9 +1,11 @@
 use serde_json::Value;
+use tokio::time::timeout;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::LanguageServer;
 
 use crate::backend::Backend;
+use crate::backend::TRIGGER_CHARACTERS;
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
@@ -24,13 +26,7 @@ impl LanguageServer for Backend {
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec![
-                        "[".to_string(),
-                        "#".to_string(),
-                        ":".to_string(),
-                        "@".to_string(),
-                        "/".to_string(),
-                    ]),
+                    trigger_characters: Some(TRIGGER_CHARACTERS.map(String::from).to_vec()),
                     work_done_progress_options: Default::default(),
                     all_commit_characters: None,
                     ..Default::default()
@@ -187,15 +183,21 @@ impl LanguageServer for Backend {
         } else {
             word.split_at(1)
         };
+        let timeout_ms = tokio::time::Duration::from_millis(2000);
         let completions = match parts.0 {
-            "#" => self.search_issue_and_pr(position, parts.1).await,
-            "@" => self.search_user(position, parts.1).await,
-            "[" => self.search_wiki(position, parts.1).await,
-            "/" => self.search_repo(position, parts.1).await,
-            ":" => self.search_owner(position, parts.1).await,
-            _ => Ok(vec![]),
-        }
-        .ok();
+            "#" => timeout(timeout_ms, self.search_issue_and_pr(position, parts.1)).await,
+            "@" => timeout(timeout_ms, self.search_user(position, parts.1)).await,
+            "[" => timeout(timeout_ms, self.search_wiki(position, parts.1)).await,
+            "/" => timeout(timeout_ms, self.search_repo(position, parts.1)).await,
+            ":" => timeout(timeout_ms, self.search_owner(position, parts.1)).await,
+            _ => Ok(Ok(vec![])),
+        };
+
+        let completions = if let Ok(completions) = completions {
+            completions.ok()
+        } else {
+            Some(vec![])
+        };
         Ok(completions.map(CompletionResponse::Array))
     }
 }
