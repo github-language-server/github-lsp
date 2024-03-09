@@ -174,6 +174,9 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("search_owner: {}", needle))
             .await;
+        if needle.is_empty() {
+            return Ok(vec![]);
+        }
         let users = octocrab::instance()
             .search()
             .users(needle)
