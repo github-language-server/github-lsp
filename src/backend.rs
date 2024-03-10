@@ -13,6 +13,8 @@ use tower_lsp::{lsp_types::Position, Client};
 use crate::gh::wiki::WikiArticle;
 use crate::gh::{self, GetDetail, GetEdit, GetLabel};
 
+pub const TRIGGER_CHARACTERS: [char; 5] = ['[', '#', ':', '@', '/'];
+
 #[derive(Debug)]
 pub struct Backend {
     pub(crate) client: Client,
@@ -174,9 +176,13 @@ impl Backend {
         self.client
             .log_message(MessageType::INFO, format!("search_owner: {}", needle))
             .await;
+        let needle = needle.replace(':', "");
+        if needle.is_empty() {
+            return Ok(vec![]);
+        }
         let users = octocrab::instance()
             .search()
-            .users(needle)
+            .users(&needle)
             // .sort("followers")
             // .order("desc")
             .send()
@@ -186,7 +192,7 @@ impl Backend {
             })?;
         let completion_items = users
             .into_iter()
-            .filter(|member| member.login.starts_with(needle)) //TODO: smarter fuzzy match
+            .filter(|member| member.login.starts_with(&needle))
             .map(|member| CompletionItem {
                 label: member.get_label(),
                 detail: Some(member.get_detail()),

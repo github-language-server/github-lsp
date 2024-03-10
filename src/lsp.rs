@@ -1,9 +1,11 @@
 use serde_json::Value;
+use tokio::time::timeout;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::LanguageServer;
 
 use crate::backend::Backend;
+use crate::backend::TRIGGER_CHARACTERS;
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
@@ -11,34 +13,16 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Options(
-                    TextDocumentSyncOptions {
-                        open_close: Some(true),
-                        change: Some(TextDocumentSyncKind::INCREMENTAL),
-                        will_save: None,
-                        will_save_wait_until: None,
-                        save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
-                            include_text: Some(true),
-                        })),
-                    },
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec![
-                        "[".to_string(),
-                        "#".to_string(),
-                        ":".to_string(),
-                        "@".to_string(),
-                        "/".to_string(),
-                    ]),
+                    trigger_characters: Some(TRIGGER_CHARACTERS.map(String::from).to_vec()),
                     work_done_progress_options: Default::default(),
                     all_commit_characters: None,
                     ..Default::default()
                 }),
-                // execute_command_provider: Some(ExecuteCommandOptions {
-                //     commands: vec!["dummy.do_something".to_string()],
-                //     work_done_progress_options: Default::default(),
-                // }),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -49,7 +33,6 @@ impl LanguageServer for Backend {
                 }),
                 ..ServerCapabilities::default()
             },
-            // ..Default::default()
         })
     }
 
@@ -106,33 +89,23 @@ impl LanguageServer for Backend {
         .await
     }
 
-    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+    async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
         self.client
             .log_message(MessageType::INFO, "file changed!")
             .await;
-        let mut text = self
-            .document_map
-            .get_mut(&params.text_document.uri.to_string())
-            .expect("Did change docs must be opened");
-        params.content_changes.iter().for_each(|change| {
-            if let Some(range) = change.range {
-                let start =
-                    text.line_to_char(range.start.line as usize) + range.start.character as usize;
-                let end = text.line_to_char(range.end.line as usize) + range.end.character as usize;
-                if start < end {
-                    text.remove(start..end);
-                }
-                text.insert(start, &change.text);
-                // eprintln!("{}", *text);
-            }
-        });
-        // self.on_change(TextDocumentItem {
-        //     uri: params.text_document.uri,
-        //     text: text,
-        //     version: params.text_document.version,
-        //     language_id: "md".into(), //TODO: is this the way?
-        // })
-        // .await
+        let text = if !params.content_changes[0].text.is_empty() {
+            std::mem::take(&mut params.content_changes[0].text)
+        } else {
+            "\n".into()
+        };
+
+        self.on_change(TextDocumentItem {
+            uri: params.text_document.uri,
+            text,
+            version: params.text_document.version,
+            language_id: "md".into(),
+        })
+        .await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
@@ -167,11 +140,7 @@ impl LanguageServer for Backend {
         let line = rope
             .get_line(position.line as usize)
             .ok_or(tower_lsp::jsonrpc::Error::internal_error())?;
-        let character_pos = if position.character as usize >= line.len_chars() {
-            line.len_chars() - 1
-        } else {
-            position.character as usize
-        };
+        let character_pos = position.character as usize;
         let line = line.to_string();
         let line = line.split_at(character_pos).0;
         let word = line
@@ -187,15 +156,22 @@ impl LanguageServer for Backend {
         } else {
             word.split_at(1)
         };
+        let fast_ms = tokio::time::Duration::from_millis(200);
+        let slow_ms = tokio::time::Duration::from_millis(3000);
         let completions = match parts.0 {
-            "#" => self.search_issue_and_pr(position, parts.1).await,
-            "@" => self.search_user(position, parts.1).await,
-            "[" => self.search_wiki(position, parts.1).await,
-            "/" => self.search_repo(position, parts.1).await,
-            ":" => self.search_owner(position, parts.1).await,
-            _ => Ok(vec![]),
-        }
-        .ok();
+            "#" => timeout(fast_ms, self.search_issue_and_pr(position, parts.1)).await,
+            "@" => timeout(fast_ms, self.search_user(position, parts.1)).await,
+            "[" => timeout(fast_ms, self.search_wiki(position, parts.1)).await,
+            "/" => timeout(fast_ms, self.search_repo(position, parts.1)).await,
+            ":" => timeout(slow_ms, self.search_owner(position, parts.1)).await,
+            _ => Ok(Ok(vec![])),
+        };
+
+        let completions = if let Ok(completions) = completions {
+            completions.ok()
+        } else {
+            Some(vec![])
+        };
         Ok(completions.map(CompletionResponse::Array))
     }
 }
