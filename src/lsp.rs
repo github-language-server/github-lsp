@@ -31,6 +31,7 @@ impl LanguageServer for Backend {
 
                     file_operations: None,
                 }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -173,5 +174,72 @@ impl LanguageServer for Backend {
             Some(vec![])
         };
         Ok(completions.map(CompletionResponse::Array))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+        let rope = self
+            .document_map
+            .get(&uri.to_string())
+            .ok_or(tower_lsp::jsonrpc::Error::invalid_request())?;
+
+        let line = rope
+            .get_line(position.line as usize)
+            .ok_or(tower_lsp::jsonrpc::Error::internal_error())?;
+        let character_pos = position.character as usize;
+
+        //TODO: cleanup parsing; possible to clean up with treesitter? need to investigate
+        let line = line.to_string();
+        let line = line.trim();
+        // scan backwards
+        let mut start = character_pos;
+        let mut start_search = start;
+        start = usize::MAX;
+        loop {
+            // look for the start of the (..) link part
+            if line.as_bytes()[start_search] == b'(' {
+                start = start_search + 1; // skip (
+                break;
+            }
+            if start_search == 0 {
+                break;
+            }
+            start_search -= 1;
+        }
+        // scan forwards
+        let mut end = character_pos;
+        let mut end_search = end;
+        end = usize::MIN;
+        loop {
+            // handle hover over the [..] part of a link
+            if start == usize::MAX && line.as_bytes()[end_search] == b'(' {
+                start = end_search + 1;
+            }
+            if line.as_bytes()[end_search] == b')' {
+                end = end_search; // str[..] slice will exclude ), non inclusive
+                break;
+            }
+            if end_search == line.len() - 1 {
+                break;
+            }
+            end_search += 1;
+        }
+
+        if start == usize::MAX || end == usize::MIN || start >= end {
+            self.client
+                .log_message(
+                    MessageType::ERROR,
+                    format!(
+                        "Hover search failed with invalid start {} end {} for line {}",
+                        start, end, line
+                    ),
+                )
+                .await;
+            return Ok(None);
+        }
+        let link: String = line[start..end].into();
+
+        self.on_hover(link).await
     }
 }

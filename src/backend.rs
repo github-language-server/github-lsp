@@ -4,9 +4,10 @@ use octocrab::models::{Author, Repository};
 use octocrab::params::State;
 use octocrab::Octocrab;
 use ropey::Rope;
-use tower_lsp::jsonrpc::Result;
+use tower_lsp::jsonrpc::{self, Result};
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionTextEdit, MessageType, Range, TextDocumentItem, TextEdit,
+    CompletionItem, CompletionTextEdit, Hover, HoverContents, MarkupContent, MarkupKind,
+    MessageType, Range, TextDocumentItem, TextEdit,
 };
 use tower_lsp::{lsp_types::Position, Client};
 
@@ -31,12 +32,83 @@ pub struct Backend {
 impl Backend {
     const PER_PAGE: u8 = 100;
 
+    pub fn new(client: Client, octocrab: Octocrab, owner: String, repo: String) -> Backend {
+        Backend {
+            client,
+            octocrab,
+            owner,
+            repo,
+            document_map: DashMap::new(),
+            repository_map: DashMap::new(),
+            issue_map: DashMap::new(),
+            member_map: DashMap::new(),
+            wiki_map: DashMap::new(),
+        }
+    }
+
     pub(crate) async fn initialize(&self) {
         self.initialize_issues().await;
         self.initialize_members().await;
         self.initialize_repos_as("owner").await;
         self.initialize_repos_as("organization_member").await;
         self.initialize_wiki().await;
+    }
+
+    pub async fn on_hover(&self, link: String) -> Result<Option<Hover>> {
+        let mut text = String::new();
+        //FIX: probably will cause issues for someone, maybe?
+        if link.contains("github.com") {
+            let link = link.replace("https://github.com/", "");
+            let parts = link.split('/');
+            let identifier = parts
+                .last()
+                .ok_or("No issue part in URL")
+                .map_err(|_| jsonrpc::Error::method_not_found())?;
+            if link.contains("issues") {
+                let issue = self
+                    .issue_map
+                    .iter()
+                    .filter(|issue| issue.get_label().starts_with(&format!("#{} ", identifier)))
+                    .last()
+                    .ok_or("No issue")
+                    .map_err(|_| jsonrpc::Error::method_not_found())?;
+                text = issue.get_detail().to_string();
+            } else if link.contains("wiki") {
+                text = format!("# Wiki article {}", identifier);
+            } else if link.contains('/') {
+                let repository = self
+                    .repository_map
+                    .iter()
+                    .filter(|repo| repo.get_label() == link)
+                    .last()
+                    .ok_or("No repo")
+                    .map_err(|_| jsonrpc::Error::method_not_found())?;
+                text = repository.get_detail().to_string();
+            } else {
+                let users = octocrab::instance()
+                    .search()
+                    .users(identifier)
+                    .per_page(1)
+                    .page(0u32)
+                    .send()
+                    .await
+                    .map_err(|_| {
+                        tower_lsp::jsonrpc::Error::new(
+                            tower_lsp::jsonrpc::ErrorCode::MethodNotFound,
+                        )
+                    })?;
+                let user = &users.items[0];
+                text = format!("# User {}", user.login.to_owned());
+            }
+        }
+        let hover = Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: text,
+            }),
+            range: None,
+        };
+        Ok(Some(hover))
     }
 
     pub(crate) async fn search_issue_and_pr(
@@ -339,19 +411,5 @@ impl Backend {
         members.into_iter().for_each(|member| {
             self.member_map.insert(member.login.to_owned(), member);
         });
-    }
-
-    pub fn new(client: Client, octocrab: Octocrab, owner: String, repo: String) -> Backend {
-        Backend {
-            client,
-            octocrab,
-            owner,
-            repo,
-            document_map: DashMap::new(),
-            repository_map: DashMap::new(),
-            issue_map: DashMap::new(),
-            member_map: DashMap::new(),
-            wiki_map: DashMap::new(),
-        }
     }
 }
