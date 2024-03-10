@@ -4,7 +4,7 @@ use super::{GetDetail, GetEdit, GetLabel};
 
 impl GetLabel for Author {
     fn get_label(&self) -> String {
-        format!("{} <{:?}>", self.login, self.email)
+        self.login.to_string()
     }
 }
 impl GetEdit for Author {
