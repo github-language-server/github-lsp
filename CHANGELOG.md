@@ -1,3 +1,17 @@
+# 24.03.10
+
+🎁 Stability and `hover`
+
+After some feedback it was clear that the incremental text handling is _hard_ to get right across editors.
+
+This version uses full document sync (much like most LSPs I've checked).
+
+There's also a timeout configured for a few async operations that could hang the UX before.
+
+feat: initial hover functionality (#46)
+fix: remove email from author label (#45)
+fix: bug with : and invalid searches (#42)
+
 # 24.03.08
 
 🚀 Our first release!
