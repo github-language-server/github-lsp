@@ -455,7 +455,7 @@ dependencies = [
  "env_logger",
  "futures",
  "log",
- "mio 1.0.0",
+ "mio 1.0.2",
  "octocrab",
  "reqwest",
  "ropey",
@@ -821,9 +821,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4929e1f84c5e54c3ec6141cd5d8b5a5c055f031f80cf78f2072920173cb4d880"
+checksum = "80e04d1dcff3aae0704555fe5fee3bcfaf3d1fdf8a7e521d5b9d2b42acb52cec"
 dependencies = [
  "hermit-abi",
  "libc",
