@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
-dashmap = "6.0.1"
+anyhow = "1.0.93"
+dashmap = "6.1.0"
 env_logger = "0.11.5"
-futures = "0.3.30"
+futures = "0.3.31"
 log = "0.4.22"
 mio = "1.0.0"
 octocrab = "0.39.0"
