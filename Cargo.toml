@@ -11,7 +11,7 @@ futures = "0.3.31"
 log = "0.4.22"
 mio = "1.0.3"
 octocrab = "0.42.1"
-reqwest = { version = "0.12.5", default-features = false, features = [
+reqwest = { version = "0.12.9", default-features = false, features = [
   "rustls-tls",
 ] }
 ropey = "1.6.1"
