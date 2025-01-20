@@ -11,7 +11,7 @@ futures = "0.3.31"
 idna = "1.0.3"
 log = "0.4.22"
 mio = "1.0.3"
-octocrab = "0.42.1"
+octocrab = "0.43.0"
 reqwest = { version = "0.12.9", default-features = false, features = [
   "rustls-tls",
 ] }
